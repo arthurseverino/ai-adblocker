@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Page Scanner (MVP)</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+      }
+      html, body {
+        margin: 0;
+        padding: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      }
+      body {
+        min-width: 320px;
+        max-width: 480px;
+        padding: 12px 12px 14px;
+      }
+      h3 {
+        margin: 0 0 8px 0;
+        font-size: 16px;
+        font-weight: 600;
+      }
+      #scanBtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 10px;
+        border: 1px solid rgba(127,127,127,0.4);
+        border-radius: 6px;
+        background: ButtonFace;
+        color: ButtonText;
+        cursor: pointer;
+      }
+      #scanBtn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+      #status {
+        margin-top: 8px;
+        min-height: 1.2em;
+        font-size: 12px;
+        color: gray;
+      }
+      #result {
+        margin-top: 10px;
+        max-height: 420px;
+        overflow: auto;
+        background: Canvas;
+        color: CanvasText;
+        border: 1px solid rgba(127,127,127,0.3);
+        border-radius: 6px;
+        padding: 8px;
+        font-size: 12px;
+        line-height: 1.4;
+      }
+    </style>
+  </head>
+  <body>
+    <h3>AI Page Scanner (MVP)</h3>
+    <button id="scanBtn" type="button">Scan Page</button>
+    <div id="status" role="status" aria-live="polite"></div>
+    <pre id="result" aria-label="Scan result (JSON)"></pre>
+    <script src="popup.js"></script>
+  </body>
+</html>
