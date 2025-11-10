@@ -6,54 +6,99 @@
 */
 
 (function () {
-  /**
-   * Compute basic stats for the current page without mutating the DOM.
-   * @returns {object}
-   */
   function gatherStats() {
-    const nowIso = new Date().toISOString();
+    const doc = document;      // represents the entire HTML page
+    const candidateLimit = 25; // Easily changable to increase the amount we scan as storage increases
 
-    // Defensive lookups
-    const doc = document;
-    const bodyText = doc && doc.body ? (doc.body.innerText || '') : '';
-
-    // Totals
-    const elementCount = doc ? doc.querySelectorAll('*').length : 0;
-
-    // Text metrics
-    const characters = bodyText.length;
-    const wordsArray = bodyText
-      .split(/\s+/)
-      .map(w => w.trim())
-      .filter(Boolean);
-    const words = wordsArray.length;
-    const uniqueWords = new Set(wordsArray.map(w => w.toLowerCase())).size;
-
-    // Media-like counts
-    const images = doc && doc.images ? doc.images.length : 0;
-    const links = doc && doc.links ? doc.links.length : 0;
-    const scripts = doc && doc.scripts ? doc.scripts.length : 0;
-    const stylesheets = doc ? doc.querySelectorAll('link[rel="stylesheet"]').length : 0;
-    const iframes = doc ? doc.querySelectorAll('iframe').length : 0;
 
     return {
       url: location.href,
       title: doc ? doc.title : '',
-      timestamp: nowIso,
-      totals: {
-        elements: elementCount,
-        characters,
-        words,
-        uniqueWords
-      },
-      media: {
-        images,
-        iframes,
-        links,
-        scripts,
-        stylesheets
-      }
+      timestamp: new Date().toISOString(),
+      adCandidates: gatherAdCandidates(candidateLimit)
     };
+  }
+
+  function gatherAdCandidates(limit){
+    // Collect all elements that might contain ads (temporary in memory, not saved)
+    const allElements = [...document.querySelectorAll("iframe, div, section, aside, img")];
+
+    // Collect n elements that will be analyzed and stored (n = limit)
+    const scannedElements = allElements.slice(0, limit);
+
+    // Safer keyword detector that avoids things like "header" and "adapter"
+    const keyWords = /\bads?\b|\bsponsor(ed)?\b|\bpromo(tion|ted)?\b|\bgoogle[_-]ads?\b|\bbanner\b/i;
+
+    function findMatch(str){ // Finds a match within the keywords and only returns the word
+        if (!str) return null;
+        const m = String(str).match(keyWords);
+        return m ? m[0] : null;
+      }
+
+    // Gathers only useful data fields from the scanned elements for scoring usage
+    const elementData = scannedElements.map(el => {
+      // temp placeholders for the keyword lookup
+      const idStr = el.id || "";
+      const classStr = String(el.className || "");
+      const textStr = (el.innerText || "").slice(0, 100);
+
+      const idMatch = findMatch(idStr);
+      const classMatch = findMatch(classStr);
+      const textMatch = findMatch(textStr);
+
+
+      // Simple if else blocks to check where the match was and the word
+      // Could help in scoring and assigning weights where id > class > text
+      let keyWordHit = false, keyWordSource = null, keyWordMatch = null;
+      if (idMatch){
+        keyWordHit = true;
+        keyWordSource = "id";
+        keyWordMatch = idMatch;
+      }
+      else if (classMatch){
+        keyWordHit = true;
+        keyWordSource = "class";
+        keyWordMatch = classMatch;
+      }
+      else if (textMatch){
+        keyWordHit = true;
+        keyWordSource = "text";
+        keyWordMatch = textMatch;
+      }
+      
+      /*
+      Top-performing ad sizes - Goolge Ad Manager Help https://support.google.com/admanager/answer/1100453?hl=en#topPerforming
+      Ad size	Description
+      728 × 90 (Leaderboard)
+      300 × 250 (Medium Rectangle)
+      160 × 600 (Wide Skyscraper)
+      320 × 50 (Mobile banner) 
+      */
+
+      const rect = el.getBoundingClientRect();  // gives size and position
+      const width = Math.round(rect.width);
+      const height = Math.round(rect.height);
+      const area = width * height;              // helps estimate ad like dimensions
+
+
+      // Detects both direct <iframe> elements and containers that wrap an <iframe>
+      const isIframe = el.tagName === "IFRAME" || Boolean(el.querySelector("iframe"));
+    
+      return {
+        keyWordHit,              /* Boolean value if we hit on a keyword */
+        keyWordSource,           /* Where the match is located */
+        keyWordMatch,            /* What the matched keyword was */
+        isIframe,                /* IFRAME is the strongest indicator of an ad easy weight assignment */ 
+        tag: el.tagName,         /* DIV, IFRAME, IMG, etc */
+        id: idStr,               /* Element id that can include things like "ad", "banner", etc */
+        classList: classStr,  /* Elements CSS classes for matching key words like "ad", "adslot", "sponsor", "promo", "google_ads"*/
+        width,
+        height,
+        area,
+      };
+    });
+    return elementData;
+    
   }
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
