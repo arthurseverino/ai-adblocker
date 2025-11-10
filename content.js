@@ -5,6 +5,8 @@
   - Returns a JSON object without modifying the page
 */
 
+console.log('Content script loaded');
+
 (function () {
   function gatherStats() {
     const doc = document; // represents the entire HTML page
@@ -47,21 +49,10 @@
     }
   };
 
-  /* Explanation of Changes:
-Added adSelectors Array:
-
+  /* 
 This array contains predefined CSS selectors for common ad elements (e.g., .ad-banner, #ad-container, etc.).
-Integrated adSelectors into allElements:
-
-For each selector in adSelectors, the code uses document.querySelectorAll to find matching elements and adds them to the allElements array.
-The flatMap method ensures that all matching elements are flattened into a single array.
-Combined Dynamic and Predefined Detection:
 
 The allElements array now includes both dynamically detected elements (based on iframe, div, section, aside, img) and explicitly defined elements (from adSelectors).
-
-Flexibility: The adSelectors array allows you to explicitly target known ad patterns, while the keyword matching handles more generic cases.
-
-Scalability: You can easily add more selectors to the adSelectors array as you encounter new ad patterns.
  */
 
   function gatherAdCandidates(limit) {
@@ -151,36 +142,78 @@ Scalability: You can easily add more selectors to the adSelectors array as you e
     return elementData;
   }
 
-  /* Use window.addEventListener if you want the ad removal to happen automatically on every page load.
+  /* 
+  Use window.addEventListener if you want the ad removal to happen automatically on every page load.
   
-Use chrome.runtime.onMessage if you want the ad removal to be triggered manually (e.g., by a user action in the extension popup or background script).*/
+  Use chrome.runtime.onMessage if you want the ad removal to be triggered manually (e.g., by a user action in the extension popup or background script).
+  */
 
   // Function to scan and remove ads
   const scanAndRemoveAds = () => {
-    adSelectors.forEach((selector) => {
-      const ads = document.querySelectorAll(selector);
-      removeAd([...ads]); // Use the removeAd function to remove detected ads
+    console.log('scanAndRemoveAds function executed');
+    const adCandidates = gatherAdCandidates(100); // Adjust the limit as needed
+
+    adCandidates.forEach((candidate) => {
+      if (candidate.keyWordHit) {
+        // Find the element in the DOM
+        const selector = candidate.id
+          ? `#${candidate.id}` // Use ID if available
+          : candidate.classList
+          ? `.${candidate.classList.split(' ').join('.')}` // Use classList if available
+          : null;
+
+        if (selector) {
+          const element = document.querySelector(selector);
+          if (element) {
+            element.remove(); // Remove the ad element from the DOM
+            console.log(`Removed ad: ${selector}`);
+          } else {
+            console.warn(`Element not found for selector: ${selector}`);
+          }
+        }
+      }
     });
   };
-
   // Run the ad removal script on page load
   window.addEventListener('load', () => {
     scanAndRemoveAds();
   });
 
+  // Allow manual ad removal via a Chrome message
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (!message || message.type !== 'SCAN_PAGE') {
-      return; // Not handled; fall through to other listeners if any
+    if (message && message.type === 'SCAN_PAGE') {
+      try {
+        scanAndRemoveAds();
+        sendResponse({ success: true });
+      } catch (err) {
+        sendResponse({ error: err.message });
+      }
     }
-
-    try {
-      const stats = gatherStats();
-      sendResponse(stats);
-    } catch (err) {
-      sendResponse({ error: err && err.message ? err.message : String(err) });
-    }
-
-    // Return true only if we plan to respond asynchronously; here we respond synchronously
-    return true;
   });
 })();
+
+const scanAndRemoveAds = () => {
+  const adCandidates = gatherAdCandidates(100); // Adjust the limit as needed
+
+  adCandidates.forEach((candidate) => {
+    if (candidate.keyWordHit) {
+      // Find the element in the DOM
+      const selector = candidate.id
+        ? `#${candidate.id}` // Use ID if available
+        : candidate.classList
+        ? `.${candidate.classList.split(' ').join('.')}` // Use classList if available
+        : null;
+
+      if (selector) {
+        removeAd(selector); // Use the removeAd utility function
+        console.log(`Removed ad: ${selector}`);
+      }
+    }
+  });
+};
+
+console.log('Ad Candidates:', gatherAdCandidates(candidateLimit));
+console.log('Removing target:', target);
+console.log('Scanning and removing ads...');
+console.log('Ad Candidates:', adCandidates);
+console.log('Generated selector:', selector);
