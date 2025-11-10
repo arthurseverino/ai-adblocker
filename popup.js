@@ -31,12 +31,17 @@
       if (button) button.disabled = true;
       setStatus('Scanning...');
 
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      const [tab] = await chrome.tabs.query({
+        active: true,
+        currentWindow: true,
+      });
       if (!tab || !tab.id) {
         throw new Error('No active tab found.');
       }
 
-      const response = await chrome.tabs.sendMessage(tab.id, { type: 'SCAN_PAGE' });
+      const response = await chrome.tabs.sendMessage(tab.id, {
+        type: 'SCAN_PAGE',
+      });
 
       if (!response) {
         throw new Error('No response from content script.');
@@ -53,7 +58,9 @@
     } catch (error) {
       // Common case: content script not injected on the page yet.
       setStatus('Error');
-      renderResult({ error: error && error.message ? error.message : String(error) });
+      renderResult({
+        error: error && error.message ? error.message : String(error),
+      });
     } finally {
       if (button) button.disabled = false;
     }
