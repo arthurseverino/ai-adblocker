@@ -22,7 +22,8 @@
    * Removes elements from the DOM based on a given CSS selector or element reference.
    * @param {string | HTMLElement | HTMLElement[]} target - The path to the ad (CSS selector or DOM element(s)).
    */
-  function removeAd(target) {
+
+  const removeAd = (target) => {
     try {
       if (typeof target === 'string') {
         // If the target is a CSS selector, find all matching elements
@@ -44,12 +45,41 @@
     } catch (error) {
       console.error('Error removing ad:', error);
     }
-  }
+  };
+
+  /* Explanation of Changes:
+Added adSelectors Array:
+
+This array contains predefined CSS selectors for common ad elements (e.g., .ad-banner, #ad-container, etc.).
+Integrated adSelectors into allElements:
+
+For each selector in adSelectors, the code uses document.querySelectorAll to find matching elements and adds them to the allElements array.
+The flatMap method ensures that all matching elements are flattened into a single array.
+Combined Dynamic and Predefined Detection:
+
+The allElements array now includes both dynamically detected elements (based on iframe, div, section, aside, img) and explicitly defined elements (from adSelectors).
+
+Flexibility: The adSelectors array allows you to explicitly target known ad patterns, while the keyword matching handles more generic cases.
+
+Scalability: You can easily add more selectors to the adSelectors array as you encounter new ad patterns.
+ */
 
   function gatherAdCandidates(limit) {
+    // Predefined ad selectors array
+    const adSelectors = [
+      '.ad-banner', // Example: class for banner ads
+      '#ad-container', // Example: ID for ad containers
+      '.ad-slot', // Example: class for ad slots
+      '[id^="ad-"]', // Example: IDs starting with "ad-"
+      '[class*="ad"]', // Example: classes containing "ad"
+    ];
+
     // Collect all elements that might contain ads (temporary in memory, not saved)
     const allElements = [
       ...document.querySelectorAll('iframe, div, section, aside, img'),
+      ...adSelectors.flatMap((selector) => [
+        ...document.querySelectorAll(selector),
+      ]),
     ];
 
     // Collect n elements that will be analyzed and stored (n = limit)
@@ -59,12 +89,12 @@
     const keyWords =
       /\bads?\b|\bsponsor(ed)?\b|\bpromo(tion|ted)?\b|\bgoogle[_-]ads?\b|\bbanner\b/i;
 
-    function findMatch(str) {
+    const findMatch = (str) => {
       // Finds a match within the keywords and only returns the word
       if (!str) return null;
       const m = String(str).match(keyWords);
       return m ? m[0] : null;
-    }
+    };
 
     // Gathers only useful data fields from the scanned elements for scoring usage
     const elementData = scannedElements.map((el) => {
@@ -78,7 +108,6 @@
       const textMatch = findMatch(textStr);
 
       // Simple if else blocks to check where the match was and the word
-      // Could help in scoring and assigning weights where id > class > text
       let keyWordHit = false,
         keyWordSource = null,
         keyWordMatch = null;
@@ -96,19 +125,10 @@
         keyWordMatch = textMatch;
       }
 
-      /*
-        Top-performing ad sizes - Goolge Ad Manager Help https://support.google.com/admanager/answer/1100453?hl=en#topPerforming
-        Ad size	Description
-        728 × 90 (Leaderboard)
-        300 × 250 (Medium Rectangle)
-        160 × 600 (Wide Skyscraper)
-        320 × 50 (Mobile banner) 
-        */
-
       const rect = el.getBoundingClientRect(); // gives size and position
       const width = Math.round(rect.width);
       const height = Math.round(rect.height);
-      const area = width * height; // helps estimate ad like dimensions
+      const area = width * height; // helps estimate ad-like dimensions
 
       // Detects both direct <iframe> elements and containers that wrap an <iframe>
       const isIframe =
@@ -130,6 +150,23 @@
     });
     return elementData;
   }
+
+  /* Use window.addEventListener if you want the ad removal to happen automatically on every page load.
+  
+Use chrome.runtime.onMessage if you want the ad removal to be triggered manually (e.g., by a user action in the extension popup or background script).*/
+
+  // Function to scan and remove ads
+  const scanAndRemoveAds = () => {
+    adSelectors.forEach((selector) => {
+      const ads = document.querySelectorAll(selector);
+      removeAd([...ads]); // Use the removeAd function to remove detected ads
+    });
+  };
+
+  // Run the ad removal script on page load
+  window.addEventListener('load', () => {
+    scanAndRemoveAds();
+  });
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (!message || message.type !== 'SCAN_PAGE') {
