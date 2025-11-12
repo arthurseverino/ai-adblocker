@@ -2,7 +2,7 @@
   Content script for AI Page Scanner (MVP)
   - Listens for SCAN_PAGE messages
   - Computes lightweight stats about the current document
-  - Returns a JSON object without modifying the page
+  - Uses AI API to detect and remove ads
 */
 
 console.log('Content script loaded');
@@ -115,31 +115,81 @@ console.log('gatherStats(): ', gatherStats());
   Use chrome.runtime.onMessage if you want the ad removal to be triggered manually (e.g., by a user action in the extension popup or background script).
   */
 
-// Function to scan and remove ads
-const scanAndRemoveAds = () => {
+// Function to scan and remove ads using AI
+const scanAndRemoveAds = async () => {
   console.log('scanAndRemoveAds function executed');
-  const adCandidates = gatherAdCandidates(500); // Adjust the limit as needed
+  const adCandidates = gatherAdCandidates(500);
 
-  adCandidates.forEach((candidate) => {
-    if (candidate.keyWordHit) {
-      // Find the element in the DOM
-      const selector = candidate.id
-        ? `#${candidate.id}` // Use ID if available
-        : candidate.classList
-        ? `.${candidate.classList.split(' ').join('.')}` // Use classList if available
-        : null;
+  try {
+    // Call the AI API for predictions
+    const response = await fetch('http://localhost:5000/predict', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        adCandidates: adCandidates,
+      }),
+    });
 
-      if (selector) {
-        const element = document.querySelector(selector);
+    if (!response.ok) {
+      throw new Error(`API request failed: ${response.status}`);
+    }
+
+    const data = await response.json();
+    console.log('AI Predictions:', data);
+
+    // Remove elements that are predicted to be ads
+    data.predictions.forEach((prediction) => {
+      if (prediction.isAd) {
+        const candidate = adCandidates[prediction.index];
+        const selector = prediction.selector;
+
+        // Try to find and remove the element
+        let element = document.querySelector(selector);
+
+        // Fallback: if selector doesn't work, try finding by other attributes
+        if (!element && candidate.id) {
+          element = document.getElementById(candidate.id);
+        }
+
         if (element) {
-          element.remove(); // Remove the ad element from the DOM
-          console.log(`Removed ad: ${selector}`);
+          element.remove();
+          console.log(
+            `✓ Removed ad (${prediction.confidence}% confidence): ${selector}`
+          );
         } else {
-          console.warn(`Element not found for selector: ${selector}`);
+          console.warn(`✗ Element not found for selector: ${selector}`);
         }
       }
-    }
-  });
+    });
+
+    console.log(
+      `Scan complete: ${data.ads_detected} ads detected out of ${data.total_scanned} elements`
+    );
+  } catch (error) {
+    console.error('AI ad detection failed:', error);
+    console.log('Falling back to keyword-based detection...');
+
+    // Fallback to simple keyword detection if API fails
+    adCandidates.forEach((candidate) => {
+      if (candidate.keyWordHit) {
+        const selector = candidate.id
+          ? `#${candidate.id}`
+          : candidate.classList
+          ? `.${candidate.classList.split(' ').join('.')}`
+          : null;
+
+        if (selector) {
+          const element = document.querySelector(selector);
+          if (element) {
+            element.remove();
+            console.log(`Removed ad (fallback): ${selector}`);
+          }
+        }
+      }
+    });
+  }
 };
 
 // Run the ad removal script on page load
@@ -150,13 +200,19 @@ window.addEventListener('load', () => {
 // Allow manual ad removal via a Chrome message
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message && message.type === 'SCAN_PAGE') {
-    try {
-      console.log('Received SCAN_PAGE message');
-      scanAndRemoveAds();
-      sendResponse({ success: true });
-    } catch (err) {
-      sendResponse({ error: err.message });
-    }
+    console.log('Received SCAN_PAGE message');
+    
+    // Run async function and handle response
+    scanAndRemoveAds()
+      .then(() => {
+        sendResponse({ success: true, message: 'AI scan complete' });
+      })
+      .catch((err) => {
+        sendResponse({ error: err.message });
+      });
+    
+    // Return true to indicate async response
+    return true;
   }
 });
 
