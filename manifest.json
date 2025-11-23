@@ -1,12 +1,27 @@
 {
   "manifest_version": 3,
   "name": "AI Page Scanner (MVP)",
-  "description": "Scans the current page and returns basic content stats (no AI yet).",
-  "version": "0.0.1",
+  "description": "Scans the current page and detects ads using AI backend.",
+  "version": "0.0.2",
+  
   "action": {
     "default_popup": "popup.html"
   },
-  "host_permissions": ["<all_urls>"],
+
+    "permissions": [
+    "scripting",
+    "tabs"
+  ],
+
+
+  "host_permissions": [   
+    "<all_urls>",
+    "http://localhost:5000/"],
+
+  "background": { 
+    "service_worker": "background.js"
+  },
+
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
