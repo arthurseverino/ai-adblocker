@@ -7,7 +7,7 @@
 
 //getting message from content.js
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.type === "PREDICT ADS"){
+    if (message?.type === "PREDICT_ADS"){
         const {adCandidates} = message;
 
         (async () => {
@@ -30,7 +30,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 sendResponse({success: true, data});
             }
             catch(err){
-                console.error("Background: AI request failed", data);
+                console.error("Background: AI request failed", err);
                 sendResponse({success: false, error: String(err) });
             }
         })();
