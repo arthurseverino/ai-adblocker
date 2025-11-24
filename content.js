@@ -107,6 +107,26 @@ const gatherStats = () => {
   };
 };
 
+const callAIModelViaBackground = (adCandidates) => {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage(
+      {type: "PREDICT_ADS", adCandidates},
+      (response) => {
+        if (chrome.runtime.lastError) {
+          // Error talking to background / extension
+          return reject(chrome.runtime.lastError);
+        }
+        if(!response || !response.success) {
+          // Background reported failure (e.g., backend down)
+          return reject(response?.error || 'Unknown error from background');
+
+        }
+        resolve(response.data);
+      }
+    );
+  });
+};
+
 console.log('gatherStats(): ', gatherStats());
 
 /* 
@@ -122,21 +142,10 @@ const scanAndRemoveAds = async () => {
 
   try {
     // Call the AI API for predictions
-    const response = await fetch('http://localhost:5000/predict', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        adCandidates: adCandidates,
-      }),
-    });
 
-    if (!response.ok) {
-      throw new Error(`API request failed: ${response.status}`);
-    }
+    console.log('Sending ad candidates to background for AI prediction...');
 
-    const data = await response.json();
+    const data = await callAIModelViaBackground(adCandidates);
     console.log('AI Predictions:', data);
 
     // Remove elements that are predicted to be ads
