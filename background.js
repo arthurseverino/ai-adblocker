@@ -11,27 +11,41 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         const {adCandidates} = message;
 
         (async () => {
+            const startTime = Date.now();
             try {
-                console.log("background: sending ad candidates to AI backend");
+                console.log(`[BACKGROUND] Sending ${adCandidates.length} ad candidates to AI backend...`);
+                console.log("[BACKGROUND] Backend URL: http://127.0.0.1:5001/predict");
 
-                const response = await fetch("http://localhost:5000/predict", {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+                const response = await fetch("http://127.0.0.1:5001/predict", {
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
                     body: JSON.stringify({adCandidates}),
-
+                    signal: controller.signal
                 });
+
+                clearTimeout(timeoutId);
+
                 if (!response.ok){
-                    throw new Error(`Backend Error: ${response.status}`);
+                    const errorText = await response.text();
+                    throw new Error(`Backend Error: ${response.status} - ${errorText}`);
                 }
 
                 const data = await response.json();
-                console.log("Background: received AI response", data);
+                const elapsed = Date.now() - startTime;
+                console.log(`[BACKGROUND] AI response received in ${elapsed}ms`);
+                console.log(`[BACKGROUND] Detected ${data.ads_detected} ads out of ${data.total_scanned} candidates`);
+                console.log("[BACKGROUND] Response data:", data);
 
                 sendResponse({success: true, data});
             }
             catch(err){
-                console.error("Background: AI request failed", err);
-                sendResponse({success: false, error: String(err) });
+                const elapsed = Date.now() - startTime;
+                console.error(`[BACKGROUND] ✗ AI request failed after ${elapsed}ms:`, err.message);
+                console.error("[BACKGROUND] Error details:", err);
+                sendResponse({success: false, error: String(err.message) });
             }
         })();
 

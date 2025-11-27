@@ -6,7 +6,7 @@ Tests various ad and non-ad examples
 import requests
 import json
 
-API_URL = 'http://localhost:8000'
+API_URL = 'http://localhost:5001'
 
 def test_health():
     """Test the health endpoint"""

@@ -152,14 +152,36 @@ const scanAndRemoveAds = async () => {
     data.predictions.forEach((prediction) => {
       if (prediction.isAd) {
         const candidate = adCandidates[prediction.index];
-        const selector = prediction.selector;
+        let selector = prediction.selector;
 
+
+        if(!selector || selector === 'div' || selector === 'section'){
+          console.warn('[CONTENT] Skipping generic selector:', selector);
+          return;
+        }
+
+            // 2) Only trust predictions that have a strong heuristic signal:
+            //    - keyWordHit: "ad", "sponsor", "promo", "banner", etc. in id/class/text
+            //    - isIframe: actual ad iframe or iframe wrapper
+      const hasStrongSignal = candidate.keyWordHit || candidate.isIframe;
+      if (!hasStrongSignal) {
+        console.warn(
+          '[CONTENT] Skipping weak-signal element (no keyword/iframe) even though model flagged it:',
+          selector,
+          candidate
+        );
+        return;
+      }
+      
+
+        // Safely escape ID selectors (e.g. #3pAd) to avoid querySelector errors
+        let safeSelector = selector.startsWith("#") ? "#" + CSS.escape(selector.slice(1)): selector;
         // Try to find and remove the element
-        let element = document.querySelector(selector);
+        let element = document.querySelector(safeSelector);
 
         // Fallback: if selector doesn't work, try finding by other attributes
         if (!element && candidate.id) {
-          element = document.getElementById(candidate.id);
+            element = document.getElementById(candidate.id);
         }
 
         if (element) {

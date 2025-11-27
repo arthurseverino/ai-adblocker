@@ -13,6 +13,15 @@ from typing import List, Dict
 app = Flask(__name__)
 CORS(app)  # Allow requests from Chrome extension
 
+# Chrome's Private Network Access (PNA) changes can block requests to localhost
+# from extension/service-worker contexts unless the server responds to preflight
+# with `Access-Control-Allow-Private-Network: true`. Add this header to all
+# responses so the extension's background script can call the local backend.
+@app.after_request
+def add_private_network_header(response):
+    response.headers['Access-Control-Allow-Private-Network'] = 'true'
+    return response
+
 # Load the trained model
 MODEL_PATH = 'ad_detector_model.pkl'
 model = None
@@ -114,7 +123,7 @@ def health_check():
         'model_loaded': model is not None
     })
 
-@app.route('/predict', methods=['POST'])
+@app.route('/predict', methods=['POST', 'OPTIONS'])
 def predict():
     """
     Predict which elements are ads
@@ -152,37 +161,59 @@ def predict():
     }
     """
     
+    # Handle CORS preflight
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    
     if model is None:
+        error_msg = 'Model not loaded. Please train the model first using: python train_model.py'
+        print(f"[ERROR] {error_msg}")
         return jsonify({
-            'error': 'Model not loaded. Please train the model first.'
+            'error': error_msg
         }), 500
     
     try:
-        data = request.get_json()
+        import time
+        start_time = time.time()
         
+        data = request.get_json()
         if not data or 'adCandidates' not in data:
             return jsonify({
                 'error': 'Missing adCandidates in request body'
             }), 400
         
         candidates = data['adCandidates']
+        print(f"[/predict] Processing {len(candidates)} candidates...")
         
         if not candidates:
             return jsonify({'predictions': []})
         
         # Extract features for all candidates
+        feature_start = time.time()
+
         features_list = []
         for candidate in candidates:
             features = extract_features(candidate)
             features_list.append(features)
         
+        feature_elapsed = (time.time() - feature_start) * 1000
+
         X = np.array(features_list)
+
+        print(f"[/predict] Feature extraction took {feature_elapsed:.2f}ms")
         
         # Get predictions and probabilities
+        model_start = time.time()
+
         predictions = model.predict(X)
         probabilities = model.predict_proba(X)
+
+        model_elapsed = (time.time() - model_start) * 1000
+        print(f"[/predict] Model inference took {model_elapsed:.2f}ms")
         
         # Build response
+        response_start = time.time()
+
         results = []
         for idx, (pred, proba) in enumerate(zip(predictions, probabilities)):
             # proba[1] is the probability of being an ad (class 1)
@@ -196,13 +227,23 @@ def predict():
                 'selector': create_selector(candidates[idx])
             })
         
+        response_elapsed = (time.time() - response_start) * 1000
+        total_elapsed = (time.time() - start_time) * 1000
+        
+        ads_count = sum(1 for r in results if r['isAd'])
+        print(f"[/predict] Response building took {response_elapsed:.2f}ms")
+        print(f"[/predict] ✓ TOTAL: {total_elapsed:.2f}ms | Detected {ads_count}/{len(candidates)} ads")
+        
         return jsonify({
             'predictions': results,
             'total_scanned': len(candidates),
-            'ads_detected': sum(1 for r in results if r['isAd'])
+            'ads_detected': ads_count
         })
         
     except Exception as e:
+        import traceback
+        print(f"[ERROR] Prediction failed: {str(e)}")
+        traceback.print_exc()
         return jsonify({
             'error': f'Prediction failed: {str(e)}'
         }), 500
@@ -226,11 +267,11 @@ if __name__ == '__main__':
         print("   Please run: python train_model.py")
         print()
     
-    print("Starting server on http://localhost:5000")
+    print("Starting server on http://localhost:5001")
     print("Endpoints:")
     print("  POST /predict       - Predict ads from candidates")
     print("  GET  /health        - Health check")
     print("  POST /reload-model  - Reload model from disk")
     print("=" * 60)
     
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    app.run(host='0.0.0.0', port=5001, debug=True)
