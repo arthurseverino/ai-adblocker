@@ -97,13 +97,13 @@ const gatherAdCandidates = (limit) => {
 
 const gatherStats = () => {
   const doc = document;
-  const candidateLimit = 500;
+  const totalElements = document.querySelectorAll("*").length;
 
   return {
     url: location.href,
     title: doc?.title || '',
     timestamp: new Date().toISOString(),
-    adCandidates: gatherAdCandidates(candidateLimit),
+    adCandidates: gatherAdCandidates(totalElements),
   };
 };
 
@@ -138,7 +138,9 @@ console.log('gatherStats(): ', gatherStats());
 // Function to scan and remove ads using AI
 const scanAndRemoveAds = async () => {
   console.log('scanAndRemoveAds function executed');
-  const adCandidates = gatherAdCandidates(500);
+
+  const totalElements = document.querySelectorAll("*").length;
+  const adCandidates = gatherAdCandidates(totalElements);
 
   try {
     // Call the AI API for predictions
