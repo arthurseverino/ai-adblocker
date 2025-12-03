@@ -5,8 +5,6 @@
   - Returns a JSON object without modifying the page
 */
 
-console.log('Content script loaded');
-
 // Gathers potential ad elements from the page for analysis
 const gatherAdCandidates = (limit) => {
   // Predefined ad selectors array
@@ -110,10 +108,12 @@ const gatherStats = () => {
 console.log('gatherStats(): ', gatherStats());
 
 /* 
+
   Use window.addEventListener if you want the ad removal to happen automatically on every page load.
   
   Use chrome.runtime.onMessage if you want the ad removal to be triggered manually (e.g., by a user action in the extension popup or background script).
-  */
+
+*/
 
 // Function to scan and remove ads
 const scanAndRemoveAds = () => {
