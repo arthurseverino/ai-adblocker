@@ -23,7 +23,8 @@ def add_private_network_header(response):
     return response
 
 # Load the trained model
-MODEL_PATH = 'ad_detector_model.pkl'
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+MODEL_PATH = os.path.join(BASE_DIR, 'ad_detector_model.pkl')
 model = None
 
 def load_model():
