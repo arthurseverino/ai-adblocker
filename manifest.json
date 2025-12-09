@@ -10,7 +10,8 @@
 
     "permissions": [
     "scripting",
-    "tabs"
+    "tabs",
+    "storage"
   ],
 
 
@@ -28,6 +29,13 @@
       "matches": ["<all_urls>"],
       "js": ["content.js"],
       "run_at": "document_idle"
+    }
+  ],
+  
+  "web_accessible_resources": [
+    {
+      "resources": ["config.js"],
+      "matches": ["<all_urls>"]
     }
   ]
 }

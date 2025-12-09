@@ -8,10 +8,18 @@ from flask_cors import CORS
 import numpy as np
 import pickle
 import os
-from typing import List, Dict
+import time
+import uuid
+from typing import List, Dict, Tuple
+from functools import wraps
 
 app = Flask(__name__)
 CORS(app)  # Allow requests from Chrome extension
+
+# Configuration constants
+MAX_CANDIDATES = 500
+MAX_REQUEST_SIZE_MB = 10
+CONFIDENCE_THRESHOLD = 80
 
 # Chrome's Private Network Access (PNA) changes can block requests to localhost
 # from extension/service-worker contexts unless the server responds to preflight
@@ -121,8 +129,28 @@ def health_check():
     """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
-        'model_loaded': model is not None
+        'model_loaded': model is not None,
+        'max_candidates': MAX_CANDIDATES,
+        'confidence_threshold': CONFIDENCE_THRESHOLD,
+        'version': '0.0.2'
     })
+
+def validate_candidate(candidate: Dict, index: int) -> Tuple[bool, str]:
+    """Validate a single candidate structure"""
+    required_fields = ['tag', 'width', 'height', 'area']
+    for field in required_fields:
+        if field not in candidate:
+            return False, f"Candidate {index} missing required field: {field}"
+    
+    # Validate types
+    if not isinstance(candidate.get('width'), (int, float)) or candidate.get('width', 0) < 0:
+        return False, f"Candidate {index} has invalid width"
+    if not isinstance(candidate.get('height'), (int, float)) or candidate.get('height', 0) < 0:
+        return False, f"Candidate {index} has invalid height"
+    if not isinstance(candidate.get('area'), (int, float)) or candidate.get('area', 0) < 0:
+        return False, f"Candidate {index} has invalid area"
+    
+    return True, ""
 
 @app.route('/predict', methods=['POST', 'OPTIONS'])
 def predict():
@@ -173,35 +201,80 @@ def predict():
             'error': error_msg
         }), 500
     
+    request_id = str(uuid.uuid4())[:8]
+    start_time = time.time()
+    
     try:
-        import time
-        start_time = time.time()
+        # Check request size
+        content_length = request.content_length
+        if content_length and content_length > MAX_REQUEST_SIZE_MB * 1024 * 1024:
+            return jsonify({
+                'error': f'Request too large: {content_length / 1024 / 1024:.2f}MB (max: {MAX_REQUEST_SIZE_MB}MB)'
+            }), 413
         
         data = request.get_json()
-        if not data or 'adCandidates' not in data:
+        if not data:
+            return jsonify({
+                'error': 'Invalid JSON in request body'
+            }), 400
+        
+        if 'adCandidates' not in data:
             return jsonify({
                 'error': 'Missing adCandidates in request body'
             }), 400
         
         candidates = data['adCandidates']
-        print(f"[/predict] Processing {len(candidates)} candidates...")
+        
+        # Validate candidates is a list
+        if not isinstance(candidates, list):
+            return jsonify({
+                'error': 'adCandidates must be an array'
+            }), 400
+        
+        # Enforce candidate limit
+        if len(candidates) > MAX_CANDIDATES:
+            print(f"[/predict] [{request_id}] Limiting candidates from {len(candidates)} to {MAX_CANDIDATES}")
+            candidates = candidates[:MAX_CANDIDATES]
+        
+        print(f"[/predict] [{request_id}] Processing {len(candidates)} candidates...")
         
         if not candidates:
-            return jsonify({'predictions': []})
+            return jsonify({
+                'predictions': [],
+                'total_scanned': 0,
+                'ads_detected': 0
+            })
+        
+        # Validate candidate structure
+        for idx, candidate in enumerate(candidates):
+            if not isinstance(candidate, dict):
+                return jsonify({
+                    'error': f'Candidate {idx} must be an object'
+                }), 400
+            is_valid, error_msg = validate_candidate(candidate, idx)
+            if not is_valid:
+                return jsonify({
+                    'error': error_msg
+                }), 400
         
         # Extract features for all candidates
         feature_start = time.time()
 
         features_list = []
         for candidate in candidates:
-            features = extract_features(candidate)
-            features_list.append(features)
+            try:
+                features = extract_features(candidate)
+                features_list.append(features)
+            except Exception as e:
+                print(f"[/predict] [{request_id}] Warning: Failed to extract features for candidate: {e}")
+                # Use default features for invalid candidates
+                features_list.append(np.zeros(10))
         
         feature_elapsed = (time.time() - feature_start) * 1000
 
         X = np.array(features_list)
 
-        print(f"[/predict] Feature extraction took {feature_elapsed:.2f}ms")
+        print(f"[/predict] [{request_id}] Feature extraction took {feature_elapsed:.2f}ms")
         
         # Get predictions and probabilities
         model_start = time.time()
@@ -210,7 +283,7 @@ def predict():
         probabilities = model.predict_proba(X)
 
         model_elapsed = (time.time() - model_start) * 1000
-        print(f"[/predict] Model inference took {model_elapsed:.2f}ms")
+        print(f"[/predict] [{request_id}] Model inference took {model_elapsed:.2f}ms")
         
         # Build response
         response_start = time.time()
@@ -219,7 +292,7 @@ def predict():
         for idx, (pred, proba) in enumerate(zip(predictions, probabilities)):
             # proba[1] is the probability of being an ad (class 1)
             confidence = int(proba[1] * 100)
-            is_ad = confidence >= 80  # Threshold at 80%
+            is_ad = confidence >= CONFIDENCE_THRESHOLD
             
             results.append({
                 'index': idx,
@@ -232,21 +305,30 @@ def predict():
         total_elapsed = (time.time() - start_time) * 1000
         
         ads_count = sum(1 for r in results if r['isAd'])
-        print(f"[/predict] Response building took {response_elapsed:.2f}ms")
-        print(f"[/predict] ✓ TOTAL: {total_elapsed:.2f}ms | Detected {ads_count}/{len(candidates)} ads")
+        print(f"[/predict] [{request_id}] Response building took {response_elapsed:.2f}ms")
+        print(f"[/predict] [{request_id}] ✓ TOTAL: {total_elapsed:.2f}ms | Detected {ads_count}/{len(candidates)} ads")
         
         return jsonify({
             'predictions': results,
             'total_scanned': len(candidates),
-            'ads_detected': ads_count
+            'ads_detected': ads_count,
+            'request_id': request_id
         })
         
+    except ValueError as e:
+        # Handle validation errors
+        print(f"[/predict] [{request_id}] Validation error: {str(e)}")
+        return jsonify({
+            'error': f'Invalid request: {str(e)}',
+            'request_id': request_id
+        }), 400
     except Exception as e:
         import traceback
-        print(f"[ERROR] Prediction failed: {str(e)}")
+        print(f"[/predict] [{request_id}] ERROR: Prediction failed: {str(e)}")
         traceback.print_exc()
         return jsonify({
-            'error': f'Prediction failed: {str(e)}'
+            'error': f'Prediction failed: {str(e)}',
+            'request_id': request_id
         }), 500
 
 @app.route('/reload-model', methods=['POST'])
