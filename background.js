@@ -18,8 +18,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
-                const response = await fetch("http://127.0.0.1:5001/predict", {
+                
+                const API_URL = "https://ai-adblocker.onrender.com";
+                const response = await fetch(`${API_URL}/predict`, {
                     method: "POST",
                     headers: {"Content-Type": "application/json"},
                     body: JSON.stringify({adCandidates}),
